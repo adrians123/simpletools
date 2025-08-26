@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Time Tracker – moje czynności</title>
+  <style>
+    body {font-family: system-ui, sans-serif; background:#0b0c10; color:#eee; padding:20px;}
+    h1 {margin-bottom:15px;}
+    .card {background:#11131a; padding:15px; border-radius:12px; margin-bottom:20px;}
+    input {padding:6px; border-radius:6px; border:1px solid #444; background:#0e1118; color:#fff; width:70%;}
+    button {padding:6px 10px; border:none; border-radius:6px; cursor:pointer; font-weight:600;}
+    .btn-add {background:#41c3ff; color:#000;}
+    .btn-task {background:#1a1d29; color:#eee; margin:5px 0; width:100%; text-align:left;}
+    .btn-task.active {background:#41c3ff; color:#000;}
+    .time {float:right; font-weight:700;}
+  </style>
+</head>
+<body>
+  <h1>⏱️ Time Tracker</h1>
+  
+  <div class="card">
+    <input type="text" id="taskName" placeholder="Nazwa czynności">
+    <button class="btn-add" onclick="addTask()">Dodaj</button>
+  </div>
+
+  <div id="taskList" class="card"></div>
+
+  <script>
+    let tasks = [];
+    let timers = {};
+
+    function addTask(){
+      const name = document.getElementById('taskName').value.trim();
+      if(!name) return;
+      const id = Date.now();
+      tasks.push({id, name, time:0, active:false, lastStart:null});
+      render();
+      document.getElementById('taskName').value='';
+    }
+
+    function toggleTask(id){
+      tasks.forEach(t=>{
+        if(t.id===id){
+          if(!t.active){
+            t.active=true;
+            t.lastStart=Date.now();
+          } else {
+            t.active=false;
+            t.time += (Date.now()-t.lastStart);
+            t.lastStart=null;
+          }
+        } else {
+          if(t.active){
+            t.active=false;
+            t.time += (Date.now()-t.lastStart);
+            t.lastStart=null;
+          }
+        }
+      });
+      render();
+    }
+
+    function format(ms){
+      const s=Math.floor(ms/1000);
+      const h=Math.floor(s/3600);
+      const m=Math.floor((s%3600)/60);
+      const sec=s%60;
+      return `${h}h ${m}m ${sec}s`;
+    }
+
+    function render(){
+      const list=document.getElementById('taskList');
+      list.innerHTML='';
+      tasks.forEach(t=>{
+        let elapsed=t.time;
+        if(t.active) elapsed += (Date.now()-t.lastStart);
+        const btn=document.createElement('button');
+        btn.className='btn-task'+(t.active?' active':'');
+        btn.innerHTML=`${t.name} <span class="time">${format(elapsed)}</span>`;
+        btn.onclick=()=>toggleTask(t.id);
+        list.appendChild(btn);
+      });
+    }
+
+    setInterval(render,1000);
+  </script>
+</body>
+</html>
