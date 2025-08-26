@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Listy wydatków</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#0b0c10;color:#f1f1f1;padding:20px;margin:0}
+    h1{margin-top:0}
+    a.back{display:inline-block;margin-bottom:20px;padding:8px 14px;background:#41c3ff;color:#000;
+      font-weight:700;border-radius:8px;text-decoration:none}
+    .card{background:#11131a;padding:14px;border-radius:12px;margin-bottom:20px;border:1px solid #1f2333}
+    input{padding:8px;border-radius:6px;border:1px solid #333;background:#0e1118;color:#fff}
+    button{padding:8px 12px;border:none;border-radius:6px;cursor:pointer;font-weight:700}
+    .btn-add{background:#41c3ff;color:#000}
+    .btn-del{background:#ff7a7a;color:#000}
+    .list{margin-top:10px}
+    .item{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px dashed #2a2f44}
+    .muted{color:#aaa;font-size:13px}
+    .sum{margin-top:10px;font-weight:700}
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back">⬅️ Powrót do strony głównej</a>
+  <h1>💸 Listy wydatków</h1>
+
+  <div class="card">
+    <input id="newListName" placeholder="Nazwa nowej listy (np. Budowa płotu)">
+    <button class="btn-add" onclick="addList()">Dodaj listę</button>
+  </div>
+
+  <div id="lists"></div>
+
+  <script>
+    let data = JSON.parse(localStorage.getItem("expense-lists")||"[]");
+
+    function save(){ localStorage.setItem("expense-lists", JSON.stringify(data)); }
+
+    function addList(){
+      const name=document.getElementById("newListName").value.trim();
+      if(!name) return;
+      data.push({id:Date.now(),name,items:[]});
+      document.getElementById("newListName").value="";
+      save(); render();
+    }
+
+    function addItem(listId){
+      const nEl=document.getElementById("itemName-"+listId);
+      const vEl=document.getElementById("itemValue-"+listId);
+      const name=nEl.value.trim();
+      const val=parseFloat(vEl.value);
+      if(!name||isNaN(val)) return;
+      const list=data.find(l=>l.id===listId);
+      list.items.push({id:Date.now(),name,value:val});
+      nEl.value=""; vEl.value="";
+      save(); render();
+    }
+
+    function delList(id){
+      if(!confirm("Usunąć całą listę?")) return;
+      data=data.filter(l=>l.id!==id);
+      save(); render();
+    }
+
+    function delItem(listId,itemId){
+      const list=data.find(l=>l.id===listId);
+      list.items=list.items.filter(i=>i.id!==itemId);
+      save(); render();
+    }
+
+    function render(){
+      const c=document.getElementById("lists");
+      c.innerHTML="";
+      data.forEach(l=>{
+        const card=document.createElement("div");
+        card.className="card";
+        card.innerHTML=`
+          <h3>${l.name}</h3>
+          <div class="row">
+            <input id="itemName-${l.id}" placeholder="nazwa wydatku">
+            <input id="itemValue-${l.id}" type="number" step="0.01" placeholder="kwota">
+            <button class="btn-add" onclick="addItem(${l.id})">Dodaj</button>
+            <button class="btn-del" onclick="delList(${l.id})">Usuń listę</button>
+          </div>
+        `;
+        const listDiv=document.createElement("div");
+        listDiv.className="list";
+        let sum=0;
+        l.items.forEach(i=>{
+          sum+=i.value;
+          const row=document.createElement("div");
+          row.className="item";
+          row.innerHTML=`
+            <span>${i.name} <span class="muted">${i.value.toFixed(2)} zł</span></span>
+            <button class="btn-del" onclick="delItem(${l.id},${i.id})">Usuń</button>
+          `;
+          listDiv.appendChild(row);
+        });
+        const sumDiv=document.createElement("div");
+        sumDiv.className="sum";
+        sumDiv.textContent="Suma: "+sum.toFixed(2)+" zł";
+        card.appendChild(listDiv);
+        card.appendChild(sumDiv);
+        c.appendChild(card);
+      });
+    }
+    render();
+  </script>
+</body>
+</html>
