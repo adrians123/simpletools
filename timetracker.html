@@ -1,89 +1,347 @@
 <!doctype html>
 <html lang="pl">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Time Tracker – moje czynności</title>
   <style>
-    body {font-family: system-ui, sans-serif; background:#0b0c10; color:#eee; padding:20px;}
-    h1 {margin-bottom:15px;}
-    .card {background:#11131a; padding:15px; border-radius:12px; margin-bottom:20px;}
-    input {padding:6px; border-radius:6px; border:1px solid #444; background:#0e1118; color:#fff; width:70%;}
-    button {padding:6px 10px; border:none; border-radius:6px; cursor:pointer; font-weight:600;}
-    .btn-add {background:#41c3ff; color:#000;}
-    .btn-task {background:#1a1d29; color:#eee; margin:5px 0; width:100%; text-align:left;}
-    .btn-task.active {background:#41c3ff; color:#000;}
-    .time {float:right; font-weight:700;}
+    :root{
+      --bg:#0b0c10; --card:#11131a; --ink:#e9eef4; --muted:#a9b4c0;
+      --brd:#1f2333; --accent:#41c3ff; --accent-ink:#000; --soft:#1a1d29; --danger:#ff7a7a; --warn:#ffd36e;
+    }
+    *{box-sizing:border-box}
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);margin:0;padding:20px}
+    h1{margin:0 0 12px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .card{background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:14px;margin-bottom:16px}
+    input,select{padding:10px;border-radius:8px;border:1px solid #394055;background:#0e1118;color:var(--ink)}
+    input[type="date"]{color-scheme:dark}
+    button{padding:10px 12px;border:none;border-radius:8px;cursor:pointer;font-weight:700}
+    .btn-add{background:var(--accent);color:var(--accent-ink)}
+    .btn-sec{background:var(--soft);color:var(--ink)}
+    .btn-warn{background:var(--warn);color:#000}
+    .btn-danger{background:var(--danger);color:#000}
+    .task{border:1px solid var(--brd);border-radius:12px;margin:10px 0;overflow:hidden}
+    .task-header{display:flex;align-items:center;gap:8px;justify-content:space-between;padding:8px 10px;background:#121623}
+    .task-title{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+    .task-name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .task-time{font-weight:800}
+    .task-controls{display:flex;gap:8px;flex-wrap:wrap}
+    .play{background:var(--accent);color:var(--accent-ink)}
+    .pause{background:var(--warn);color:#000}
+    details{background:#0f1320}
+    details > summary{list-style:none;cursor:pointer;padding:10px 12px;border-top:1px solid var(--brd);display:flex;align-items:center;gap:10px}
+    details[open] > summary{background:#0e1220}
+    .sessions{padding:8px 12px 12px}
+    .session{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed #2a3044}
+    .session:last-child{border-bottom:none}
+    .muted{color:var(--muted)}
+    .tiny{font-size:12px}
+    .badge{font-size:12px;padding:2px 8px;border-radius:999px;background:#1c2134;border:1px solid #2a3150;color:var(--muted)}
+    .sumline{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:6px;border-top:1px solid #23273a}
   </style>
 </head>
 <body>
   <h1>⏱️ Time Tracker</h1>
-  
+
   <div class="card">
-    <input type="text" id="taskName" placeholder="Nazwa czynności">
-    <button class="btn-add" onclick="addTask()">Dodaj</button>
+    <div class="row">
+      <input id="taskName" placeholder="Nazwa czynności (np. Kopanie otworu, Mieszanie betonu)" style="flex:1;min-width:220px">
+      <button class="btn-add" onclick="addTask()">Dodaj</button>
+      <button class="btn-sec" onclick="stopAll()">⏹️ Stop wszystko</button>
+      <button class="btn-danger" onclick="clearAll()">🗑️ Wyczyść wszystko</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label class="tiny muted">Filtruj historię po dniu:</label>
+      <input type="date" id="filterDate" onchange="render()" />
+      <button class="btn-sec" onclick="clearFilter()">Wyczyść filtr</button>
+      <span class="tiny muted">* Filtr dotyczy listy sesji w szczegółach, suma obok nazwy to łączny czas całej czynności.</span>
+    </div>
   </div>
 
   <div id="taskList" class="card"></div>
 
   <script>
-    let tasks = [];
-    let timers = {};
+    // ===== UTIL =====
+    const pad = n => n.toString().padStart(2,'0');
+    function fmtDuration(ms){
+      const s = Math.floor(ms/1000);
+      const h = Math.floor(s/3600);
+      const m = Math.floor((s%3600)/60);
+      const sec = s%60;
+      return `${h}h ${pad(m)}m ${pad(sec)}s`;
+    }
+    function fmtDateTime(ts){
+      const d = new Date(ts);
+      const Y = d.getFullYear();
+      const M = pad(d.getMonth()+1);
+      const D = pad(d.getDate());
+      const hh = pad(d.getHours());
+      const mm = pad(d.getMinutes());
+      const ss = pad(d.getSeconds());
+      return `${Y}-${M}-${D} ${hh}:${mm}:${ss}`;
+    }
+    function dayBounds(dateStr){
+      if(!dateStr) return null;
+      const d = new Date(dateStr+'T00:00:00');
+      const start = d.getTime();
+      const end = start + 24*3600*1000 - 1; // 23:59:59.999
+      return {start, end};
+    }
+    function overlapMs(aStart,aEnd,bStart,bEnd){
+      const s = Math.max(aStart, bStart);
+      const e = Math.min(aEnd, bEnd);
+      return Math.max(0, e - s);
+    }
 
+    // ===== STATE =====
+    let tasks = load() || [];
+
+    function load(){
+      try{
+        const raw = localStorage.getItem('time-tracker-tasks');
+        if(!raw) return [];
+        const arr = JSON.parse(raw);
+        return arr.map(t => ({
+          id: t.id,
+          name: t.name,
+          time: t.time||0,
+          active: !!t.active,
+          lastStart: t.lastStart||null,
+          sessions: Array.isArray(t.sessions)? t.sessions.map(s=>({
+            start: s.start,
+            end: s.end ?? null
+          })) : []
+        }));
+      }catch(e){ return []; }
+    }
+    function save(){
+      localStorage.setItem('time-tracker-tasks', JSON.stringify(tasks));
+    }
+
+    // ===== ACTIONS =====
     function addTask(){
       const name = document.getElementById('taskName').value.trim();
       if(!name) return;
       const id = Date.now();
-      tasks.push({id, name, time:0, active:false, lastStart:null});
-      render();
+      tasks.push({id, name, time:0, active:false, lastStart:null, sessions:[]});
       document.getElementById('taskName').value='';
+      save(); render();
     }
 
     function toggleTask(id){
+      const now = Date.now();
       tasks.forEach(t=>{
         if(t.id===id){
           if(!t.active){
             t.active=true;
-            t.lastStart=Date.now();
+            t.lastStart=now;
+            t.sessions.push({start: now, end: null});
           } else {
             t.active=false;
-            t.time += (Date.now()-t.lastStart);
+            t.time += (now - t.lastStart);
+            // zamknij bieżącą sesję
+            const last = t.sessions[t.sessions.length-1];
+            if(last && last.end===null) last.end = now;
             t.lastStart=null;
           }
         } else {
           if(t.active){
             t.active=false;
-            t.time += (Date.now()-t.lastStart);
+            t.time += (now - t.lastStart);
+            const last = t.sessions[t.sessions.length-1];
+            if(last && last.end===null) last.end = now;
             t.lastStart=null;
           }
         }
       });
+      save(); render();
+    }
+
+    function stopAll(){
+      const now = Date.now();
+      tasks.forEach(t=>{
+        if(t.active){
+          t.active=false;
+          t.time += (now - t.lastStart);
+          const last = t.sessions[t.sessions.length-1];
+          if(last && last.end===null) last.end = now;
+          t.lastStart=null;
+        }
+      });
+      save(); render();
+    }
+
+    function clearAll(){
+      if(!confirm('Na pewno usunąć wszystkie czynności i historię?')) return;
+      tasks = [];
+      save(); render();
+    }
+
+    function deleteTask(id){
+      if(!confirm('Usunąć tę czynność i całą jej historię?')) return;
+      const wasActive = tasks.find(t=>t.id===id && t.active);
+      if(wasActive) stopAll();
+      tasks = tasks.filter(t=>t.id!==id);
+      save(); render();
+    }
+
+    function deleteSession(taskId, idx){
+      const t = tasks.find(x=>x.id===taskId);
+      if(!t) return;
+      const s = t.sessions[idx];
+      if(!s) return;
+      // jeśli aktywna i to ostatnia, zatrzymaj
+      if(t.active && s.end===null){
+        stopAll();
+      }
+      // skoryguj sumaryczny czas o tę sesję
+      const endTs = s.end ?? Date.now();
+      const dur = endTs - s.start;
+      // ale tylko jeśli sesja była zamknięta i już doliczona do time
+      // Mamy time tylko z zamkniętych okresów przez toggle/stopAll.
+      // Aby być bezpiecznym, przeliczymy time od zera z sesji (rebuilding).
+      t.sessions.splice(idx,1);
+      // rebuild sumy:
+      t.time = t.sessions.reduce((acc,ss)=> acc + ((ss.end??Date.now()) - ss.start), 0);
+      if(t.active && t.lastStart){
+        t.time -= (Date.now() - t.lastStart); // aktywna część nie wchodzi do t.time
+      }
+      save(); render();
+    }
+
+    function clearFilter(){
+      document.getElementById('filterDate').value = '';
       render();
     }
 
-    function format(ms){
-      const s=Math.floor(ms/1000);
-      const h=Math.floor(s/3600);
-      const m=Math.floor((s%3600)/60);
-      const sec=s%60;
-      return `${h}h ${m}m ${sec}s`;
-    }
-
+    // ===== RENDER =====
     function render(){
-      const list=document.getElementById('taskList');
+      const list = document.getElementById('taskList');
       list.innerHTML='';
+      const f = document.getElementById('filterDate').value;
+      const bounds = dayBounds(f);
+
       tasks.forEach(t=>{
-        let elapsed=t.time;
-        if(t.active) elapsed += (Date.now()-t.lastStart);
-        const btn=document.createElement('button');
-        btn.className='btn-task'+(t.active?' active':'');
-        btn.innerHTML=`${t.name} <span class="time">${format(elapsed)}</span>`;
-        btn.onclick=()=>toggleTask(t.id);
-        list.appendChild(btn);
+        let total = t.time;
+        if(t.active && t.lastStart){
+          total += (Date.now() - t.lastStart);
+        }
+
+        const wrap = document.createElement('div');
+        wrap.className='task';
+
+        // header
+        const head = document.createElement('div');
+        head.className='task-header';
+
+        const title = document.createElement('div');
+        title.className='task-title';
+        const nameEl = document.createElement('div');
+        nameEl.className='task-name';
+        nameEl.textContent = t.name;
+        const timeEl = document.createElement('div');
+        timeEl.className='task-time';
+        timeEl.textContent = fmtDuration(total);
+        title.appendChild(nameEl);
+        title.appendChild(timeEl);
+
+        const ctrls = document.createElement('div');
+        ctrls.className='task-controls';
+
+        const playBtn = document.createElement('button');
+        playBtn.className = t.active ? 'pause' : 'play';
+        playBtn.textContent = t.active ? '⏸️ Pauza' : '▶️ Start';
+        playBtn.onclick = ()=>toggleTask(t.id);
+
+        const delTaskBtn = document.createElement('button');
+        delTaskBtn.className='btn-danger';
+        delTaskBtn.textContent = '🗑️ Usuń czynność';
+        delTaskBtn.onclick = ()=>deleteTask(t.id);
+
+        ctrls.appendChild(playBtn);
+        ctrls.appendChild(delTaskBtn);
+
+        head.appendChild(title);
+        head.appendChild(ctrls);
+
+        // details (history)
+        const det = document.createElement('details');
+        const sum = document.createElement('summary');
+        sum.innerHTML = '📜 Rozwiń historię ' + (bounds? `<span class="badge">filtr: ${f}</span>` : '');
+        det.appendChild(sum);
+
+        const sesWrap = document.createElement('div');
+        sesWrap.className='sessions';
+
+        // filtrowanie sesji po dniu (pokazujemy tylko przecięte z dniem)
+        const filtered = bounds
+          ? t.sessions.filter(s=>{
+              const start = s.start;
+              const end = s.end ?? Date.now();
+              return overlapMs(start,end,bounds.start,bounds.end) > 0;
+            })
+          : t.sessions.slice();
+
+        // suma dnia (po filtrze)
+        const daySum = filtered.reduce((acc,s)=>{
+          const start = s.start;
+          const end = s.end ?? Date.now();
+          if(bounds){
+            return acc + overlapMs(start,end,bounds.start,bounds.end);
+          }
+          return acc + (end - start);
+        },0);
+
+        if(filtered.length===0){
+          const p = document.createElement('div');
+          p.className='muted tiny';
+          p.textContent = bounds ? 'Brak sesji w wybranym dniu.' : 'Brak sesji.';
+          sesWrap.appendChild(p);
+        } else {
+          filtered.forEach((s)=>{
+            // znajdź oryginalny index w pełnej tablicy (do kasowania)
+            const origIdx = t.sessions.indexOf(s);
+            const row = document.createElement('div');
+            row.className='session';
+
+            const when = document.createElement('div');
+            when.innerHTML = `<span class="muted tiny">start</span> ${fmtDateTime(s.start)}`
+              + (s.end ? ` <span class="muted tiny">— stop</span> ${fmtDateTime(s.end)}` : ` <span class="badge">w trakcie</span>`);
+
+            const dur = document.createElement('div');
+            const showDur = bounds ? overlapMs(s.start, s.end ?? Date.now(), bounds.start, bounds.end) : ((s.end ?? Date.now()) - s.start);
+            dur.innerHTML = `<strong>${fmtDuration(showDur)}</strong>`;
+
+            const delBtn = document.createElement('button');
+            delBtn.className='btn-warn';
+            delBtn.textContent='Usuń rekord';
+            delBtn.onclick=()=>deleteSession(t.id, origIdx);
+
+            row.appendChild(when);
+            row.appendChild(dur);
+            row.appendChild(delBtn);
+
+            sesWrap.appendChild(row);
+          });
+
+          const sumLine = document.createElement('div');
+          sumLine.className='sumline tiny';
+          sumLine.innerHTML = `<span class="muted">Suma ${bounds? 'dla dnia '+f : 'wszystkich sesji'}</span> <strong>${fmtDuration(daySum)}</strong>`;
+          sesWrap.appendChild(sumLine);
+        }
+
+        det.appendChild(sesWrap);
+
+        wrap.appendChild(head);
+        wrap.appendChild(det);
+        list.appendChild(wrap);
       });
     }
 
+    // auto refresh
     setInterval(render,1000);
+    render();
   </script>
 </body>
 </html>
