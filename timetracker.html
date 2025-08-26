@@ -55,7 +55,7 @@
       <label class="tiny muted">Filtruj historię po dniu:</label>
       <input type="date" id="filterDate" onchange="render()" />
       <button class="btn-sec" onclick="clearFilter()">Wyczyść filtr</button>
-      <span class="tiny muted">* Filtr dotyczy listy sesji w szczegółach, suma obok nazwy to łączny czas całej czynności.</span>
+      <span class="tiny muted">* Filtr dotyczy listy sesji; suma przy nazwie to łączny czas czynności.</span>
     </div>
   </div>
 
@@ -85,7 +85,7 @@
       if(!dateStr) return null;
       const d = new Date(dateStr+'T00:00:00');
       const start = d.getTime();
-      const end = start + 24*3600*1000 - 1; // 23:59:59.999
+      const end = start + 24*3600*1000 - 1;
       return {start, end};
     }
     function overlapMs(aStart,aEnd,bStart,bEnd){
@@ -140,7 +140,6 @@
           } else {
             t.active=false;
             t.time += (now - t.lastStart);
-            // zamknij bieżącą sesję
             const last = t.sessions[t.sessions.length-1];
             if(last && last.end===null) last.end = now;
             t.lastStart=null;
@@ -191,21 +190,12 @@
       if(!t) return;
       const s = t.sessions[idx];
       if(!s) return;
-      // jeśli aktywna i to ostatnia, zatrzymaj
-      if(t.active && s.end===null){
-        stopAll();
-      }
-      // skoryguj sumaryczny czas o tę sesję
-      const endTs = s.end ?? Date.now();
-      const dur = endTs - s.start;
-      // ale tylko jeśli sesja była zamknięta i już doliczona do time
-      // Mamy time tylko z zamkniętych okresów przez toggle/stopAll.
-      // Aby być bezpiecznym, przeliczymy time od zera z sesji (rebuilding).
+      if(t.active && s.end===null){ stopAll(); }
       t.sessions.splice(idx,1);
-      // rebuild sumy:
+      // przelicz sumę z sesji
       t.time = t.sessions.reduce((acc,ss)=> acc + ((ss.end??Date.now()) - ss.start), 0);
       if(t.active && t.lastStart){
-        t.time -= (Date.now() - t.lastStart); // aktywna część nie wchodzi do t.time
+        t.time -= (Date.now() - t.lastStart);
       }
       save(); render();
     }
@@ -217,6 +207,12 @@
 
     // ===== RENDER =====
     function render(){
+      // 1) ZAPAMIĘTAJ, które <details> są otwarte (po id zadania)
+      const openStates = {};
+      document.querySelectorAll('#taskList details[data-id]').forEach(det=>{
+        openStates[det.dataset.id] = det.open;
+      });
+
       const list = document.getElementById('taskList');
       list.innerHTML='';
       const f = document.getElementById('filterDate').value;
@@ -267,6 +263,9 @@
 
         // details (history)
         const det = document.createElement('details');
+        det.dataset.id = t.id;                // <-- identyfikator do zachowania stanu
+        if(openStates[t.id]) det.open = true; // <-- PRZYWRÓĆ stan open, jeśli był
+
         const sum = document.createElement('summary');
         sum.innerHTML = '📜 Rozwiń historię ' + (bounds? `<span class="badge">filtr: ${f}</span>` : '');
         det.appendChild(sum);
@@ -274,7 +273,7 @@
         const sesWrap = document.createElement('div');
         sesWrap.className='sessions';
 
-        // filtrowanie sesji po dniu (pokazujemy tylko przecięte z dniem)
+        // filtrowanie sesji po dniu
         const filtered = bounds
           ? t.sessions.filter(s=>{
               const start = s.start;
@@ -283,14 +282,10 @@
             })
           : t.sessions.slice();
 
-        // suma dnia (po filtrze)
         const daySum = filtered.reduce((acc,s)=>{
           const start = s.start;
           const end = s.end ?? Date.now();
-          if(bounds){
-            return acc + overlapMs(start,end,bounds.start,bounds.end);
-          }
-          return acc + (end - start);
+          return acc + (bounds ? overlapMs(start,end,bounds.start,bounds.end) : (end - start));
         },0);
 
         if(filtered.length===0){
@@ -300,7 +295,6 @@
           sesWrap.appendChild(p);
         } else {
           filtered.forEach((s)=>{
-            // znajdź oryginalny index w pełnej tablicy (do kasowania)
             const origIdx = t.sessions.indexOf(s);
             const row = document.createElement('div');
             row.className='session';
@@ -339,7 +333,7 @@
       });
     }
 
-    // auto refresh
+    // auto refresh – co sekundę, ale z zachowaniem stanu <details>
     setInterval(render,1000);
     render();
   </script>
