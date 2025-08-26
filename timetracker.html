@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Time Tracker – moje czynności</title>
+  <title>Time Tracker – szybki i lekki</title>
   <style>
     :root{
       --bg:#0b0c10; --card:#11131a; --ink:#e9eef4; --muted:#a9b4c0;
@@ -64,6 +64,9 @@
   <script>
     // ===== UTIL =====
     const pad = n => n.toString().padStart(2,'0');
+    const qs = sel => document.querySelector(sel);
+    const qsa = sel => Array.from(document.querySelectorAll(sel));
+
     function fmtDuration(ms){
       const s = Math.floor(ms/1000);
       const h = Math.floor(s/3600);
@@ -121,11 +124,11 @@
 
     // ===== ACTIONS =====
     function addTask(){
-      const name = document.getElementById('taskName').value.trim();
+      const name = qs('#taskName').value.trim();
       if(!name) return;
       const id = Date.now();
       tasks.push({id, name, time:0, active:false, lastStart:null, sessions:[]});
-      document.getElementById('taskName').value='';
+      qs('#taskName').value='';
       save(); render();
     }
 
@@ -201,31 +204,23 @@
     }
 
     function clearFilter(){
-      document.getElementById('filterDate').value = '';
+      qs('#filterDate').value = '';
       render();
     }
 
-    // ===== RENDER =====
+    // ===== RENDER (pełny) =====
     function render(){
-      // 1) ZAPAMIĘTAJ, które <details> są otwarte (po id zadania)
-      const openStates = {};
-      document.querySelectorAll('#taskList details[data-id]').forEach(det=>{
-        openStates[det.dataset.id] = det.open;
-      });
-
-      const list = document.getElementById('taskList');
-      list.innerHTML='';
-      const f = document.getElementById('filterDate').value;
+      const list = qs('#taskList');
+      const f = qs('#filterDate').value;
       const bounds = dayBounds(f);
 
-      tasks.forEach(t=>{
-        let total = t.time;
-        if(t.active && t.lastStart){
-          total += (Date.now() - t.lastStart);
-        }
+      list.innerHTML='';
 
+      tasks.forEach(t=>{
+        // kontener zadania
         const wrap = document.createElement('div');
         wrap.className='task';
+        wrap.dataset.taskId = t.id;
 
         // header
         const head = document.createElement('div');
@@ -233,12 +228,14 @@
 
         const title = document.createElement('div');
         title.className='task-title';
+
         const nameEl = document.createElement('div');
         nameEl.className='task-name';
         nameEl.textContent = t.name;
+
         const timeEl = document.createElement('div');
         timeEl.className='task-time';
-        timeEl.textContent = fmtDuration(total);
+        timeEl.dataset.bind = 'total'; // do tick()
         title.appendChild(nameEl);
         title.appendChild(timeEl);
 
@@ -261,11 +258,9 @@
         head.appendChild(title);
         head.appendChild(ctrls);
 
-        // details (history)
+        // details (historia)
         const det = document.createElement('details');
-        det.dataset.id = t.id;                // <-- identyfikator do zachowania stanu
-        if(openStates[t.id]) det.open = true; // <-- PRZYWRÓĆ stan open, jeśli był
-
+        det.dataset.id = t.id; // stabilny id (nie nadpisujemy co sekundę)
         const sum = document.createElement('summary');
         sum.innerHTML = '📜 Rozwiń historię ' + (bounds? `<span class="badge">filtr: ${f}</span>` : '');
         det.appendChild(sum);
@@ -273,7 +268,6 @@
         const sesWrap = document.createElement('div');
         sesWrap.className='sessions';
 
-        // filtrowanie sesji po dniu
         const filtered = bounds
           ? t.sessions.filter(s=>{
               const start = s.start;
@@ -281,12 +275,6 @@
               return overlapMs(start,end,bounds.start,bounds.end) > 0;
             })
           : t.sessions.slice();
-
-        const daySum = filtered.reduce((acc,s)=>{
-          const start = s.start;
-          const end = s.end ?? Date.now();
-          return acc + (bounds ? overlapMs(start,end,bounds.start,bounds.end) : (end - start));
-        },0);
 
         if(filtered.length===0){
           const p = document.createElement('div');
@@ -304,8 +292,7 @@
               + (s.end ? ` <span class="muted tiny">— stop</span> ${fmtDateTime(s.end)}` : ` <span class="badge">w trakcie</span>`);
 
             const dur = document.createElement('div');
-            const showDur = bounds ? overlapMs(s.start, s.end ?? Date.now(), bounds.start, bounds.end) : ((s.end ?? Date.now()) - s.start);
-            dur.innerHTML = `<strong>${fmtDuration(showDur)}</strong>`;
+            dur.innerHTML = `<strong data-bind="sess" data-start="${s.start}" data-end="${s.end??''}"></strong>`;
 
             const delBtn = document.createElement('button');
             delBtn.className='btn-warn';
@@ -321,7 +308,7 @@
 
           const sumLine = document.createElement('div');
           sumLine.className='sumline tiny';
-          sumLine.innerHTML = `<span class="muted">Suma ${bounds? 'dla dnia '+f : 'wszystkich sesji'}</span> <strong>${fmtDuration(daySum)}</strong>`;
+          sumLine.innerHTML = `<span class="muted">Suma ${bounds? 'dla dnia '+f : 'wszystkich sesji'}</span> <strong data-bind="daySum"></strong>`;
           sesWrap.appendChild(sumLine);
         }
 
@@ -331,10 +318,47 @@
         wrap.appendChild(det);
         list.appendChild(wrap);
       });
+
+      // po pełnym renderze od razu odśwież wyświetlacze
+      tick();
     }
 
-    // auto refresh – co sekundę, ale z zachowaniem stanu <details>
-    setInterval(render,1000);
+    // ===== TICK (tylko aktualizacja liczb na ekranie) =====
+    function tick(){
+      const f = qs('#filterDate').value;
+      const bounds = dayBounds(f);
+
+      tasks.forEach(t=>{
+        // total time
+        let total = t.time;
+        if(t.active && t.lastStart){
+          total += (Date.now() - t.lastStart);
+        }
+        const taskEl = qs(`.task[data-task-id="${t.id}"]`);
+        if(!taskEl) return;
+        const totalEl = taskEl.querySelector('[data-bind="total"]');
+        if(totalEl) totalEl.textContent = fmtDuration(total);
+
+        // per-session and day sum (only visible sessions – filtered at render)
+        let daySum = 0;
+        taskEl.querySelectorAll('[data-bind="sess"]').forEach(el=>{
+          const start = +el.dataset.start;
+          const endAttr = el.dataset.end;
+          const end = endAttr ? +endAttr : Date.now();
+          const dur = bounds ? overlapMs(start, end, bounds.start, bounds.end)
+                             : (end - start);
+          el.textContent = fmtDuration(dur);
+          daySum += dur;
+        });
+        const daySumEl = taskEl.querySelector('[data-bind="daySum"]');
+        if(daySumEl) daySumEl.textContent = fmtDuration(daySum);
+      });
+    }
+
+    // auto-tick co sekundę (bez re-renderu)
+    setInterval(tick, 1000);
+
+    // start
     render();
   </script>
 </body>
