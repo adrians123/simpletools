@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kalkulator betonu pod słupek – liczone na wiaderka 5 l</title>
+  <title>Kalkulator betonu pod słupek – uniwersalny</title>
   <style>
     body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#0b0c10;color:#f1f1f1;padding:24px;margin:0;}
     h1{font-size:22px;margin:0 0 10px}
@@ -22,7 +22,7 @@
   </style>
 </head>
 <body>
-  <h1>Kalkulator betonu pod słupek – na wiaderka 5 l</h1>
+  <h1>Kalkulator betonu pod słupek – uniwersalny</h1>
   <div class="card">
     <div class="grid">
       <div>
@@ -33,6 +33,10 @@
         </select>
       </div>
       <div>
+        <label>Pojemność miarki (litry):</label>
+        <input type="number" id="measure" value="5.0" step="0.1">
+      </div>
+      <div>
         <label>Średnica otworu:</label>
         <input type="number" id="diameter" value="25" step="0.1">
       </div>
@@ -41,11 +45,8 @@
         <input type="number" id="depth" value="50" step="0.1">
       </div>
       <div>
-        <label>Wybierz wiadro do mieszania:</label>
-        <select id="bucket">
-          <option value="30">30 l</option>
-          <option value="45" selected>45 l</option>
-        </select>
+        <label>Pojemność wiadra do mieszania (litry):</label>
+        <input type="number" id="bucket" value="45" step="1">
       </div>
       <div>
         <label>Margines (nie napełniaj do pełna):</label>
@@ -64,14 +65,12 @@
   <div class="card small muted">
     <p class="mono">
       Recepta: <strong>2C : 4P : 3T</strong> (C=cement, P=piasek, T=tłuczeń).<br>
-      1 „porcja” = <strong>9 wiaderek po 5 l = 45 l na sucho</strong> → po zagęszczeniu daje ~<strong>(9×5)/1.52 ≈ 29.6 l</strong> betonu.
+      1 „porcja” = 9 miarek → po zagęszczeniu i wodzie daje ~ (9 × pojemność_miarki / 1.52) l betonu.
     </p>
   </div>
 
   <script>
-    const BUCKET_L = 5.0; // pojemność miarki składników
-
-    const roundTo = (x, step)=> Math.round(x/step)*step; // zaokrąglanie do 0.5 wiaderka
+    const roundTo = (x, step)=> Math.round(x/step)*step; // zaokrąglanie
 
     function toCm(val, units){ return units==='in' ? val*2.54 : val; }
 
@@ -79,11 +78,12 @@
       const units = document.getElementById('units').value;
       let d = parseFloat(document.getElementById('diameter').value);
       let h = parseFloat(document.getElementById('depth').value);
+      const measure = parseFloat(document.getElementById('measure').value);
       const bucket = parseFloat(document.getElementById('bucket').value);
       const headroom = parseFloat(document.getElementById('headroom').value);
       const safeCap = bucket*headroom;
 
-      if([d,h].some(v=>isNaN(v)||v<=0)){
+      if([d,h,measure,bucket].some(v=>isNaN(v)||v<=0)){
         document.getElementById('result').innerHTML = "<p class='mono bad'>Podaj poprawne wartości.</p>";
         return;
       }
@@ -95,18 +95,18 @@
       const V = 0.000785 * d * d * h; // litry
       const litry = V.toFixed(1);
 
-      // Wydajność jednej porcji (na 9 wiaderek po 5 l)
-      const portionYield = (9 * BUCKET_L) / 1.52; // l betonu z porcji
+      // Wydajność jednej porcji (na 9 miarek)
+      const portionYield = (9 * measure) / 1.52;
       const portionsExact = V / portionYield;
       const full = Math.floor(portionsExact);
       const rem = portionsExact - full;
 
-      // Łączne wiaderka składników (pełne porcje + reszta w proporcji 2:4:3)
+      // Łączne miarki składników
       const C_total = full*2 + (rem*9)*(2/9);
       const P_total = full*4 + (rem*9)*(4/9);
       const T_total = full*3 + (rem*9)*(3/9);
 
-      // Zaokrąglij do 0.5 wiaderka (praktyczne odmierzanie)
+      // Zaokrąglij do 0.5 miarki
       const C_r = roundTo(C_total, 0.5);
       const P_r = roundTo(P_total, 0.5);
       const T_r = roundTo(T_total, 0.5);
@@ -115,13 +115,12 @@
       const oneBatchOK = V <= safeCap;
       const mixes = Math.max(1, Math.ceil(V / safeCap));
 
-      // Plan mieszań – rozdzielamy wiaderka proporcjonalnie między mieszania
+      // Plan mieszań
       const plan = [];
       let C_left = C_r, P_left = P_r, T_left = T_r, V_left = V;
       for(let i=0;i<mixes;i++){
         const remainingSplits = mixes - i;
-        const share = 1/remainingSplits; // równy podział reszty
-        // zaokrąglamy każdy składnik do 0.5 wiaderka
+        const share = 1/remainingSplits;
         const C_i = roundTo(C_left*share, 0.5);
         const P_i = roundTo(P_left*share, 0.5);
         const T_i = roundTo(T_left*share, 0.5);
@@ -141,12 +140,12 @@
 
       let html = `
         <p><strong>Objętość betonu:</strong> ${litry} l</p>
-        <p>Wydajność 1 porcji (2C:4P:3T, razem 9 wiaderek 5 l): ~${portionYield.toFixed(1)} l → potrzeba <strong>${portionsExact.toFixed(2)}</strong> porcji (pełne: ${full}, reszta: ${rem.toFixed(2)}).</p>
-        <p><strong>Łącznie na 1 słupek:</strong> C=${C_r.toFixed(1)} wiad., P=${P_r.toFixed(1)} wiad., T=${T_r.toFixed(1)} wiad. (miarki 5 l).</p>
+        <p>Wydajność 1 porcji (2C:4P:3T, razem 9 miarek): ~${portionYield.toFixed(1)} l → potrzeba <strong>${portionsExact.toFixed(2)}</strong> porcji (pełne: ${full}, reszta: ${rem.toFixed(2)}).</p>
+        <p><strong>Łącznie na 1 słupek:</strong> C=${C_r.toFixed(1)} miarek, P=${P_r.toFixed(1)} miarek, T=${T_r.toFixed(1)} miarek (pojemność = ${measure} l).</p>
         <p>${bucketMsg}</p>
       `;
 
-      html += `<table><thead><tr><th>Mieszanie</th><th>Docelowo (l)</th><th>C (5 l)</th><th>P (5 l)</th><th>T (5 l)</th></tr></thead><tbody>`;
+      html += `<table><thead><tr><th>Mieszanie</th><th>Docelowo (l)</th><th>C</th><th>P</th><th>T</th></tr></thead><tbody>`;
       plan.forEach(b=>{
         html += `<tr><td>#${b.idx}</td><td>${b.liters}</td><td>${b.C}</td><td>${b.P}</td><td>${b.T}</td></tr>`;
       });
