@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kalkulator betonu pod słupek – objętość + łopaty + plan mieszań</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#0b0c10;color:#f1f1f1;padding:24px;}
+    h1{font-size:22px;margin:0 0 10px}
+    .card{background:#11131a;padding:18px;border-radius:12px;max-width:820px;margin:14px auto;border:1px solid #1f2333}
+    label{display:block;margin:8px 0 4px}
+    input,select{width:100%;padding:8px;border-radius:8px;border:1px solid #333;background:#0e1118;color:#fff}
+    button{margin-top:14px;padding:10px 14px;border:none;border-radius:10px;background:#41c3ff;color:#000;cursor:pointer;font-weight:700}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .result{margin-top:16px;padding:12px;background:#1a1d29;border-radius:10px}
+    .ok{color:#55d88a}.warn{color:#ffd36e}.bad{color:#ff7a7a}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .muted{color:#a9b4c0}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{border-bottom:1px solid #2a2f44;padding:8px;text-align:left}
+    .small{font-size:13px}
+  </style>
+</head>
+<body>
+  <h1>Kalkulator betonu pod słupek – objętość + łopaty + plan mieszań</h1>
+  <div class="card">
+    <div class="grid">
+      <div>
+        <label>Jednostki:</label>
+        <select id="units">
+          <option value="cm" selected>centymetry</option>
+          <option value="in">cale</option>
+        </select>
+      </div>
+      <div>
+        <label>Pojemność łopaty (litry):</label>
+        <input type="number" id="shovel" value="5.5" step="0.1">
+      </div>
+      <div>
+        <label>Średnica otworu:</label>
+        <input type="number" id="diameter" value="25" step="0.1">
+      </div>
+      <div>
+        <label>Głębokość otworu:</label>
+        <input type="number" id="depth" value="50" step="0.1">
+      </div>
+      <div>
+        <label>Wybierz wiadro do mieszania:</label>
+        <select id="bucket">
+          <option value="30">30 l</option>
+          <option value="45" selected>45 l</option>
+        </select>
+      </div>
+      <div>
+        <label>Margines (nie napełniaj do pełna):</label>
+        <select id="headroom">
+          <option value="0.8">20% luzu (zalecane)</option>
+          <option value="0.85" selected>15% luzu</option>
+          <option value="0.9">10% luzu</option>
+        </select>
+      </div>
+    </div>
+    <button onclick="calc()">Oblicz</button>
+
+    <div class="result" id="result"></div>
+  </div>
+
+  <div class="card small muted">
+    <p class="mono">Założenia: porcja „na łopaty” = <strong>2C : 4P : 3T</strong> (9 sztychów). Wydajność 1 porcji ≈ <code>(9 × pojemność_łopaty) / 1.52</code> litra (współczynnik zagęszczenia 1.52).</p>
+  </div>
+
+  <script>
+    const roundHalf = (x)=> Math.round(x*2)/2;
+
+    function toCm(val, units){ return units==='in' ? val*2.54 : val; }
+
+    function calc(){
+      const units = document.getElementById('units').value;
+      const shovel = parseFloat(document.getElementById('shovel').value);
+      let d = parseFloat(document.getElementById('diameter').value);
+      let h = parseFloat(document.getElementById('depth').value);
+      const bucket = parseFloat(document.getElementById('bucket').value);
+      const headroom = parseFloat(document.getElementById('headroom').value);
+      const safeCap = bucket*headroom;
+
+      if([d,h,shovel].some(v=>isNaN(v)||v<=0)){
+        document.getElementById('result').innerHTML = "<p class='mono bad'>Podaj poprawne wartości.</p>";
+        return;
+      }
+
+      d = toCm(d, units);
+      h = toCm(h, units);
+
+      // Walec – objętość w litrach
+      const V = 0.000785 * d * d * h;
+      const litry = V.toFixed(1);
+
+      // Wydajność porcji i liczba porcji
+      const portionYield = (9 * shovel / 1.52);
+      const portionsExact = V / portionYield;
+      const full = Math.floor(portionsExact);
+      const rem = portionsExact - full;
+      const remSztych = rem*9;
+      const C_rem = remSztych*2/9;
+      const P_rem = remSztych*4/9;
+      const T_rem = remSztych*3/9;
+
+      // Łączne łopaty (pełne porcje + reszta)
+      const C_total = full*2 + C_rem;
+      const P_total = full*4 + P_rem;
+      const T_total = full*3 + T_rem;
+
+      // Czy jedno mieszanie w wybranym wiadrze wystarczy?
+      const oneBatchOK = V <= safeCap;
+      const mixes = Math.max(1, Math.ceil(V / safeCap));
+
+      // Plan mieszań
+      const plan = [];
+      for(let i=0;i<mixes;i++){
+        const share = (i < mixes-1) ? 1/mixes : 1 - (1/mixes)*(mixes-1);
+        plan.push({
+          liters: +(V*share).toFixed(1),
+          C: roundHalf(C_total*share),
+          P: roundHalf(P_total*share),
+          T: roundHalf(T_total*share)
+        });
+      }
+
+      let bucketMsg = oneBatchOK
+        ? `<span class="ok">Jedno mieszanie w wiadrze ${bucket} l wystarczy</span> (realny limit ~${safeCap.toFixed(0)} l).`
+        : `<span class="warn">Jedno mieszanie w wiadrze ${bucket} l to za mało</span> (realny limit ~${safeCap.toFixed(0)} l). Zrób <strong>${mixes}</strong> mieszan${mixes===1?'ie':(mixes>=5?'ia':'y')}.`;
+
+      let html = `
+        <p><strong>Objętość betonu:</strong> ${litry} l</p>
+        <p>Wydajność 1 porcji (2C:4P:3T): ~${portionYield.toFixed(1)} l → potrzebujesz <strong>${portionsExact.toFixed(2)}</strong> porcji (pełne: ${full}, reszta: ${rem.toFixed(2)}).</p>
+        <p><strong>Łącznie na 1 słupek:</strong> C=${C_total.toFixed(1)} łopat, P=${P_total.toFixed(1)} łopat, T=${T_total.toFixed(1)} łopat.</p>
+        <p>${bucketMsg}</p>
+      `;
+
+      html += `<table><thead><tr><th>Mieszanie</th><th>Docelowo (l)</th><th>C (łop.)</th><th>P (łop.)</th><th>T (łop.)</th></tr></thead><tbody>`;
+      plan.forEach((b,idx)=>{
+        html += `<tr><td>#${idx+1}</td><td>${b.liters}</td><td>${b.C}</td><td>${b.P}</td><td>${b.T}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+
+      html += `<p class="small muted">Wskazówka: trzymaj mieszankę gęstoplastyczną. Lej warstwami po 15–20 cm i każdą warstwę zagęść kijem/prętem.</p>`;
+
+      document.getElementById('result').innerHTML = html;
+    }
+  </script>
+</body>
+</html>
